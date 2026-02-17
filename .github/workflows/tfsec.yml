@@ -62,37 +62,29 @@ jobs:
       - name: Create reports directory
         run: mkdir -p reports
 
-      - name: Run tfsec - JSON Report
-        run: |
-          docker run --rm -v "$(pwd):/src" aquasec/tfsec /src \
-            --format json \
-            --out /src/reports/tfsec-report.json \
-            --soft-fail
-        continue-on-error: true
+      - name: Run tfsec with Action (JSON)
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          format: json
+          soft_fail: true
+          out_path: reports/tfsec-report.json
 
-      - name: Run tfsec - HTML Report
-        run: |
-          docker run --rm -v "$(pwd):/src" aquasec/tfsec /src \
-            --format lovely \
-            --out /src/reports/tfsec-report.html \
-            --soft-fail
-        continue-on-error: true
+      - name: Run tfsec with Action (SARIF)
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          format: sarif
+          soft_fail: true
+          out_path: reports/tfsec-results.sarif
 
-      - name: Run tfsec - SARIF Report
+      - name: Generate HTML Report using native tfsec
         run: |
-          docker run --rm -v "$(pwd):/src" aquasec/tfsec /src \
-            --format sarif \
-            --out /src/reports/tfsec-results.sarif \
-            --soft-fail
-        continue-on-error: true
-
-      - name: Run tfsec - Text Report
-        run: |
-          docker run --rm -v "$(pwd):/src" aquasec/tfsec /src \
-            --format default \
-            --out /src/reports/tfsec-report.txt \
-            --soft-fail
-        continue-on-error: true
+          # Install tfsec binary directly
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+          sudo mv tfsec /usr/local/bin/
+          
+          # Run with native binary
+          tfsec . --format lovely --out reports/tfsec-report.html --soft-fail || true
+          tfsec . --format default --out reports/tfsec-report.txt --soft-fail || true
 
       - name: Generate Summary Report
         run: |
@@ -117,12 +109,6 @@ jobs:
             echo "- **Medium Severity:** $MEDIUM_COUNT" >> reports/summary.md
             echo "- **Low Severity:** $LOW_COUNT" >> reports/summary.md
             echo "" >> reports/summary.md
-            
-            echo "## Report Files Generated" >> reports/summary.md
-            echo "- JSON Report: \`tfsec-report.json\`" >> reports/summary.md
-            echo "- HTML Report: \`tfsec-report.html\`" >> reports/summary.md
-            echo "- SARIF Report: \`tfsec-results.sarif\`" >> reports/summary.md
-            echo "- Text Report: \`tfsec-report.txt\`" >> reports/summary.md
           fi
 
       - name: Upload SARIF to GitHub Security Tab
