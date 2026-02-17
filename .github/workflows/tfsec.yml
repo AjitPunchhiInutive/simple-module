@@ -1,14 +1,45 @@
+# name: tfsec Security Scan
+
+# on:
+#   push:
+#     branches: [ main, develop, feature/* ]
+#   pull_request:
+#     branches: [ main ]
+
+# jobs:
+#   tfsec:
+#     name: Run tfsec sarif report
+#     runs-on: ubuntu-latest
+#     permissions:
+#       actions: read
+#       contents: read
+#       security-events: write
+
+#     steps:
+#       - name: Clone repo
+#         uses: actions/checkout@v4
+
+#       - name: Run tfsec
+#         uses: aquasecurity/tfsec-sarif-action@v0.1.4
+#         with:
+#           sarif_file: tfsec.sarif
+
+#       - name: Upload SARIF file
+#         uses: github/codeql-action/upload-sarif@v3
+#         with:
+#           sarif_file: tfsec.sarif
+
 name: tfsec Security Scan
 
 on:
   push:
-    branches: [ main, develop, feature/* ]
+    branches: [ main, develop ]
   pull_request:
     branches: [ main ]
 
 jobs:
   tfsec:
-    name: Run tfsec sarif report
+    name: tfsec Security Analysis
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -16,15 +47,34 @@ jobs:
       security-events: write
 
     steps:
-      - name: Clone repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run tfsec
-        uses: aquasecurity/tfsec-sarif-action@v0.1.4
-        with:
-          sarif_file: tfsec.sarif
+      - name: Run tfsec (JSON output)
+        run: |
+          docker run --rm -v "$(pwd):/src" aquasec/tfsec /src \
+            --format json \
+            --out /src/tfsec-report.json \
+            --soft-fail
 
-      - name: Upload SARIF file
+      - name: Run tfsec (SARIF output)
+        run: |
+          docker run --rm -v "$(pwd):/src" aquasec/tfsec /src \
+            --format sarif \
+            --out /src/tfsec-results.sarif \
+            --soft-fail
+
+      - name: Upload SARIF to GitHub Security Tab
         uses: github/codeql-action/upload-sarif@v3
+        if: always()
         with:
-          sarif_file: tfsec.sarif
+          sarif_file: tfsec-results.sarif
+
+      - name: Archive tfsec results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tfsec-results
+          path: |
+            tfsec-report.json
+            tfsec-results.sarif
