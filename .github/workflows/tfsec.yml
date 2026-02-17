@@ -34,16 +34,16 @@ name: tfsec Security Scan with Reports
 on:
   push:
     branches: [ main, develop, feature/* ]
-    paths:
-      - '**/*.tf'
-      - '**/*.tfvars'
-      - '**/*.hcl'
+    # paths:
+    #   - '**/*.tf'
+    #   - '**/*.tfvars'
+    #   - '**/*.hcl'
   pull_request:
     branches: [ main ]
-    paths:
-      - '**/*.tf'
-      - '**/*.tfvars'
-      - '**/*.hcl'
+    # paths:
+    #   - '**/*.tf'
+    #   - '**/*.tfvars'
+    #   - '**/*.hcl'
 
 jobs:
   tfsec-scan:
