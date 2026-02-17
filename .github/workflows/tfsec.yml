@@ -29,52 +29,143 @@
 #         with:
 #           sarif_file: tfsec.sarif
 
-name: tfsec Security Scan
+name: tfsec Security Scan with Reports
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, feature/* ]
+    paths:
+      - '**/*.tf'
+      - '**/*.tfvars'
+      - '**/*.hcl'
   pull_request:
     branches: [ main ]
+    paths:
+      - '**/*.tf'
+      - '**/*.tfvars'
+      - '**/*.hcl'
 
 jobs:
-  tfsec:
+  tfsec-scan:
     name: tfsec Security Analysis
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
       security-events: write
+      pull-requests: write
+      actions: read
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run tfsec (JSON output)
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run tfsec - JSON Report
         run: |
           docker run --rm -v "$(pwd):/src" aquasec/tfsec /src \
             --format json \
-            --out /src/tfsec-report.json \
+            --out /src/reports/tfsec-report.json \
             --soft-fail
+        continue-on-error: true
 
-      - name: Run tfsec (SARIF output)
+      - name: Run tfsec - HTML Report
+        run: |
+          docker run --rm -v "$(pwd):/src" aquasec/tfsec /src \
+            --format lovely \
+            --out /src/reports/tfsec-report.html \
+            --soft-fail
+        continue-on-error: true
+
+      - name: Run tfsec - SARIF Report
         run: |
           docker run --rm -v "$(pwd):/src" aquasec/tfsec /src \
             --format sarif \
-            --out /src/tfsec-results.sarif \
+            --out /src/reports/tfsec-results.sarif \
             --soft-fail
+        continue-on-error: true
+
+      - name: Run tfsec - Text Report
+        run: |
+          docker run --rm -v "$(pwd):/src" aquasec/tfsec /src \
+            --format default \
+            --out /src/reports/tfsec-report.txt \
+            --soft-fail
+        continue-on-error: true
+
+      - name: Generate Summary Report
+        run: |
+          echo "# tfsec Security Scan Results" > reports/summary.md
+          echo "" >> reports/summary.md
+          echo "## Scan Information" >> reports/summary.md
+          echo "- **Repository:** ${{ github.repository }}" >> reports/summary.md
+          echo "- **Branch:** ${{ github.ref_name }}" >> reports/summary.md
+          echo "- **Commit:** ${{ github.sha }}" >> reports/summary.md
+          echo "- **Scan Date:** $(date -u)" >> reports/summary.md
+          echo "" >> reports/summary.md
+          
+          if [ -f "reports/tfsec-report.json" ]; then
+            HIGH_COUNT=$(cat reports/tfsec-report.json | jq '[.results[] | select(.severity=="HIGH")] | length')
+            MEDIUM_COUNT=$(cat reports/tfsec-report.json | jq '[.results[] | select(.severity=="MEDIUM")] | length')
+            LOW_COUNT=$(cat reports/tfsec-report.json | jq '[.results[] | select(.severity=="LOW")] | length')
+            TOTAL_COUNT=$(cat reports/tfsec-report.json | jq '.results | length')
+            
+            echo "## Summary Statistics" >> reports/summary.md
+            echo "- **Total Issues:** $TOTAL_COUNT" >> reports/summary.md
+            echo "- **High Severity:** $HIGH_COUNT" >> reports/summary.md
+            echo "- **Medium Severity:** $MEDIUM_COUNT" >> reports/summary.md
+            echo "- **Low Severity:** $LOW_COUNT" >> reports/summary.md
+            echo "" >> reports/summary.md
+            
+            echo "## Report Files Generated" >> reports/summary.md
+            echo "- JSON Report: \`tfsec-report.json\`" >> reports/summary.md
+            echo "- HTML Report: \`tfsec-report.html\`" >> reports/summary.md
+            echo "- SARIF Report: \`tfsec-results.sarif\`" >> reports/summary.md
+            echo "- Text Report: \`tfsec-report.txt\`" >> reports/summary.md
+          fi
 
       - name: Upload SARIF to GitHub Security Tab
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: tfsec-results.sarif
+          sarif_file: reports/tfsec-results.sarif
 
-      - name: Archive tfsec results
+      - name: Upload All Reports as Artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: tfsec-results
-          path: |
-            tfsec-report.json
-            tfsec-results.sarif
+          name: tfsec-security-reports-${{ github.run_number }}
+          path: reports/
+          retention-days: 30
+
+      - name: Comment PR with Results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            if (fs.existsSync('reports/summary.md')) {
+              const summary = fs.readFileSync('reports/summary.md', 'utf8');
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## 🔒 tfsec Security Scan Results\n\n${summary}\n\n📊 View detailed reports in the [workflow artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`
+              });
+            }
+
+      - name: Fail workflow if high severity issues found
+        run: |
+          if [ -f "reports/tfsec-report.json" ]; then
+            HIGH_COUNT=$(cat reports/tfsec-report.json | jq '[.results[] | select(.severity=="HIGH")] | length')
+            if [ "$HIGH_COUNT" -gt 0 ]; then
+              echo "❌ Found $HIGH_COUNT high severity security issues!"
+              echo "::error::tfsec found $HIGH_COUNT high severity security issues"
+              exit 1
+            else
+              echo "✅ No high severity security issues found"
+            fi
+          fi
