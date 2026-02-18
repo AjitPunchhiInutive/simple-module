@@ -11,17 +11,17 @@ resource "google_folder" "parent_folders" {
 }
 # --------------------------------------------
 # Sub-Folders (Children of parent folders)
-# --------------------------------------------
-resource "google_folder" "sub_folders" {
-  for_each = var.folders_objects.sub_folders
+# # --------------------------------------------
+# resource "google_folder" "sub_folders" {
+#   for_each = var.folders_objects.sub_folders
 
-  display_name = each.value.display_name
-  parent       = google_folder.parent_folders[each.value.parent_folder].name
+#   display_name = each.value.display_name
+#   parent       = google_folder.parent_folders[each.value.parent_folder].name
 
-  depends_on = [
-    google_folder.parent_folders
-  ]
-}
+#   depends_on = [
+#     google_folder.parent_folders
+#   ]
+# }
 # --------------------------------------------
 # Nested Folders (Children of sub-folders)
 # --------------------------------------------
