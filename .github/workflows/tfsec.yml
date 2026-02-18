@@ -1,30 +1,118 @@
-name: tfsec Security Scan
+# name: tfsec Security Scan
+
+# on:
+#   push:
+#     branches: [ main, develop, feature/* ]
+#   pull_request:
+#     branches: [ main ]
+
+# jobs:
+#   tfsec:
+#     name: Run tfsec sarif report
+#     runs-on: ubuntu-latest
+#     permissions:
+#       actions: read
+#       contents: read
+#       security-events: write
+
+#     steps:
+#       - name: Clone repo
+#         uses: actions/checkout@v4
+
+#       - name: Run tfsec
+#         uses: aquasecurity/tfsec-sarif-action@v0.1.4
+#         with:
+#           sarif_file: tfsec.sarif
+
+#       - name: Upload SARIF file
+#         uses: github/codeql-action/upload-sarif@v3
+#         with:
+#           sarif_file: tfsec.sarif
+
+
+# ============================================================
+# Terraform Security Scan — tfsec
+# ============================================================
+# Automatically scans Terraform code for security
+# vulnerabilities and misconfigurations on every push
+# to any branch in the repository.
+#
+# Results are uploaded to:
+# Repository → Security → Code Scanning Alerts
+# ============================================================
+
+name: Terraform Security Scan (tfsec)
 
 on:
   push:
-    branches: [ main, develop, feature/* ]
-  pull_request:
-    branches: [ main ]
+    branches:
+      - '**'           # Triggers on push to every branch
+    paths:
+      - '**.tf'        # Only runs when Terraform files are changed
+      - '**.tfvars'    # Also triggers on variable file changes
 
 jobs:
-  tfsec:
-    name: Run tfsec sarif report
+  tfsec-security-scan:
+    name: Scan Terraform Code with tfsec
     runs-on: ubuntu-latest
+
+    # Permissions required for uploading SARIF results
+    # to GitHub Advanced Security (Security tab)
     permissions:
-      actions: read
-      contents: read
-      security-events: write
+      actions:         read   # Read workflow run info
+      contents:        read   # Read repository contents
+      security-events: write  # Upload SARIF security findings
 
     steps:
-      - name: Clone repo
+
+      # ── Step 1: Checkout the repository ──────────────────────────
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Run tfsec
+      # ── Step 2: Setup tfsec tool ──────────────────────────────────
+      # Install the latest version of tfsec CLI on the runner
+      - name: Setup tfsec
+        run: |
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+          tfsec --version
+
+      # ── Step 3: Run tfsec and generate SARIF report ───────────────
+      # Scans all Terraform files and outputs findings in
+      # SARIF format for GitHub Security tab integration.
+      # --soft-fail ensures the workflow doesn't block the push
+      # even if vulnerabilities are found (remove if you want
+      # to enforce hard failures on security issues)
+      - name: Run tfsec Security Scan
         uses: aquasecurity/tfsec-sarif-action@v0.1.4
         with:
           sarif_file: tfsec.sarif
+          soft_fail:  true     # Set to false to fail pipeline on findings
 
-      - name: Upload SARIF file
+      # ── Step 4: Display tfsec results in workflow logs ────────────
+      # Prints a human-readable summary directly in the
+      # Actions run logs for quick inspection
+      - name: Print tfsec Results to Logs
+        run: |
+          tfsec . --format lovely --no-color || true
+
+      # ── Step 5: Upload SARIF report to GitHub Security tab ────────
+      # Uploads findings to GitHub Code Scanning.
+      # Results visible under:
+      # Repository → Security → Code Scanning Alerts
+      - name: Upload SARIF Report to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
+        if: always()   # Upload results even if tfsec finds issues
         with:
-          sarif_file: tfsec.sarif
+          sarif_file:     tfsec.sarif
+          category:       tfsec   # Labels results in Security tab
+
+      # ── Step 6: Upload SARIF as workflow artifact (backup) ────────
+      # Saves the raw SARIF file as a downloadable artifact
+      # for offline review or audit purposes
+      - name: Save SARIF Report as Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name:            tfsec-sarif-report
+          path:            tfsec.sarif
+          retention-days: 30   # Artifact kept for 30 days
